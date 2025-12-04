@@ -1,33 +1,32 @@
 import streamlit as st
 from google import genai
 from tavily import TavilyClient
+import os
 
 # 1. PAGE CONFIGURATION
 st.set_page_config(page_title="AI Research Agency", page_icon="🕵️", layout="wide")
 
-# 2. SIDEBAR - SECURE KEY INPUT
-with st.sidebar:
-    st.header("⚙️ Mission Control")
-    google_api_key = st.text_input("Google API Key", type="password")
-    tavily_api_key = st.text_input("Tavily API Key", type="password")
-    
-    st.info("Keys are never stored. They are used only for this session.")
-    st.markdown("---")
-    st.write("### 🤖 Agent Specs")
-    st.write("• **Brain:** Gemini 2.0 Flash")
-    st.write("• **Eyes:** Tavily Search API")
+# 2. LOAD KEYS (Auto-detect from Secrets OR Sidebar)
+# We check if the key exists in the Cloud Secrets first
+if "GOOGLE_API_KEY" in st.secrets:
+    google_api_key = st.secrets["GOOGLE_API_KEY"]
+else:
+    google_api_key = st.sidebar.text_input("Google API Key", type="password")
+
+if "TAVILY_API_KEY" in st.secrets:
+    tavily_api_key = st.secrets["TAVILY_API_KEY"]
+else:
+    tavily_api_key = st.sidebar.text_input("Tavily API Key", type="password")
 
 # 3. DEFINE THE TOOLS
 def search_web(topic, tavily_key):
-    """Runs the search using Tavily (Commercial Grade)"""
     try:
+        # Use the key passed to the function
         tavily = TavilyClient(api_key=tavily_key)
-        # 'search_depth="advanced"' gives deeper, better results for business topics
         response = tavily.search(query=topic, search_depth="advanced", max_results=5)
         
-        # Format the results for the AI to read
         context = []
-        for result in response['results']:
+        for result in response.get('results', []):
             context.append(f"Source: {result['title']}\nURL: {result['url']}\nContent: {result['content']}")
         
         return "\n\n".join(context)
@@ -35,7 +34,6 @@ def search_web(topic, tavily_key):
         return f"Search Error: {e}"
 
 def generate_summary(query, raw_data, google_key):
-    """The Brain (Gemini) reads the data and writes the report"""
     try:
         client = genai.Client(api_key=google_key)
         prompt = f"""
@@ -60,16 +58,18 @@ def generate_summary(query, raw_data, google_key):
 st.title("🕵️ GH-Automate: Commercial Intelligence")
 st.markdown("### Enterprise-Grade Market Research")
 
+# Hide the sidebar info if keys are already loaded
+if "GOOGLE_API_KEY" not in st.secrets:
+    st.sidebar.info("Enter keys to start.")
+
 query = st.text_input("Research Topic", placeholder="e.g., Current price of 50kg Dangote Cement in Accra")
 
 if st.button("🚀 Run Analysis", type="primary"):
     if not google_api_key or not tavily_api_key:
-        st.error("⚠️ Please enter BOTH API Keys in the sidebar!")
+        st.error("⚠️ API Keys are missing! Please check settings or sidebar.")
     else:
-        # Create columns for layout
         col1, col2 = st.columns([1, 1])
         
-        # STATUS: SEARCHING
         with st.status("🕵️ Agent is working...", expanded=True) as status:
             st.write("Connecting to Tavily API...")
             raw_data = search_web(query, tavily_api_key)
@@ -79,7 +79,6 @@ if st.button("🚀 Run Analysis", type="primary"):
             final_report = generate_summary(query, raw_data, google_api_key)
             status.update(label="✅ Analysis Complete!", state="complete", expanded=False)
 
-        # OUTPUT
         st.markdown("---")
         st.subheader("📄 Executive Summary")
         st.markdown(final_report)
